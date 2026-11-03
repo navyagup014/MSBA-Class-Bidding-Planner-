@@ -1,0 +1,434 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'></head><body><title>Spring 2027 Bid Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: two columns. Left = filterable section list. Right (sticky) = plan: units, requirements, bids, conflicts, week grid. */
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --fg:#14202b; --muted:#5b6b7a; --line:#d8dee4;
+  --accent:#0b6e6e; --accent-fg:#ffffff; --accent-soft:#dff0ef;
+  --bad:#b3261e; --bad-soft:#fbe4e2; --warn:#8a5a00; --warn-soft:#fbefd2; --good:#1d6f3a; --good-soft:#dcf2e2; --el-bg:#e6eaf7; --el-bd:#4a5ca3;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f161d; --panel:#17212b; --fg:#e6edf3; --muted:#94a5b5; --line:#2a3846;
+  --accent:#4cc2bd; --accent-fg:#06201f; --accent-soft:#12383a;
+  --bad:#ff8d85; --bad-soft:#44201f; --warn:#f0c15c; --warn-soft:#3b2f12; --good:#6fd68f; --good-soft:#163523; --el-bg:#222b4a; --el-bd:#8d9fe6; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f161d; --panel:#17212b; --fg:#e6edf3; --muted:#94a5b5; --line:#2a3846;
+  --accent:#4cc2bd; --accent-fg:#06201f; --accent-soft:#12383a;
+  --bad:#ff8d85; --bad-soft:#44201f; --warn:#f0c15c; --warn-soft:#3b2f12; --good:#6fd68f; --good-soft:#163523; --el-bg:#222b4a; --el-bd:#8d9fe6; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--sans);padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1280px;margin:0 auto}
+h1{font-size:26px;line-height:1.15;margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+header{display:flex;flex-wrap:wrap;gap:16px 32px;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+header p{margin:6px 0 0;color:var(--muted);max-width:60ch}
+.budget{display:flex;gap:12px;flex-wrap:wrap}
+.budget label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+input,select,button{font:inherit;color:inherit}
+input[type=number],input[type=search],select{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-height:34px}
+.budget input{width:92px;font-family:var(--mono);font-size:15px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:960px){main{grid-template-columns:minmax(0,1fr)}}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px}
+.filters input[type=search]{flex:1 1 180px;min-width:0}
+.filters label.chk{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+.count{color:var(--muted);font-size:12px;margin:0 0 8px}
+.course{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.ch{display:flex;gap:10px;align-items:baseline;padding:10px 12px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.code{font-family:var(--mono);font-weight:500;font-size:13px}
+.ttl{font-weight:600;flex:1 1 200px;min-width:0}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.core{background:var(--accent-soft);color:var(--accent);border-color:transparent;font-weight:600}
+.pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.pill.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.pill.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.note{padding:6px 12px;font-size:12px;color:var(--warn);background:var(--warn-soft)}
+.sec{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:9px 12px;border-top:1px solid var(--line);align-items:center}
+.sec:first-of-type{border-top:0}
+.sec.on{background:var(--accent-soft)}
+.sec.dim{opacity:.6}
+.plinks{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:3px}
+.plinks a,.syl{color:var(--accent)}
+.syl{font-size:12px;margin-left:auto}
+select.prio{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 6px;min-height:28px;font-size:12px;margin-top:4px}
+.mbar{display:none}
+@media (max-width:960px){.mbar{display:flex;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;gap:6px 14px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:10px;font:13px var(--mono);color:var(--fg);text-decoration:none}.mbar .bad{color:var(--bad)}}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.prow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}.prow label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.pdays{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:13px}.pdays label{display:flex;gap:4px;align-items:center}
+.pblocks{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.pb{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+input[type=time]{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:34px}
+.when{font-family:var(--mono);font-size:13px}
+.meta{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:2px}
+.seats{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;font-size:12px}
+.seats b{font-family:var(--mono);font-weight:500}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:6px 12px;min-height:34px}
+button.add{border-color:var(--accent);color:var(--accent);font-weight:600}
+button.add.on{background:var(--accent);color:var(--accent-fg)}
+button.sm{padding:3px 9px;min-height:28px;font-size:12px}
+aside{position:sticky;top:12px;display:flex;flex-direction:column;gap:12px;max-height:calc(100vh - 24px);overflow:auto}
+@media (max-width:960px){aside{position:static;max-height:none}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar.over i{background:var(--bad)}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.kv b{font-family:var(--mono);font-weight:500}
+ul.clean{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.clean li{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.mark{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;margin-top:1px}
+.mark.ok{background:var(--good-soft);color:var(--good)} .mark.no{background:var(--warn-soft);color:var(--warn)} .mark.x{background:var(--bad-soft);color:var(--bad)} .mark.info{background:var(--line);color:var(--muted)}
+.bidrow{display:grid;grid-template-columns:minmax(0,1fr) 84px 28px;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.bidrow:first-of-type{border-top:0}
+.bidrow input{width:100%;font-family:var(--mono)}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button.act{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.cal{overflow-x:auto}
+.grid{position:relative;display:grid;grid-template-columns:34px repeat(6,minmax(52px,1fr));min-width:380px}
+.dh{font-size:11px;text-align:center;color:var(--muted);padding-bottom:4px;font-weight:600}
+.col{position:relative;border-left:1px solid var(--line);height:var(--h);background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--hr) - 1px),var(--line) calc(var(--hr) - 1px),var(--line) var(--hr))}
+.hrs{position:relative;height:var(--h)}
+.hrs span{position:absolute;right:4px;font-size:10px;color:var(--muted);font-family:var(--mono);transform:translateY(-6px)}
+.blk{position:absolute;border-radius:4px;background:var(--accent-soft);border:1px solid var(--accent);color:var(--fg);font-size:10px;line-height:1.2;padding:2px 3px;overflow:hidden}
+.blk.online{border-style:dashed}
+.blk.core{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.blk.el{background:var(--el-bg);border-color:var(--el-bd)}
+.blk.conf{background:var(--bad-soft);border-color:var(--bad);color:var(--fg)}
+.lg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.lg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px;border:1px solid}
+.blk b{display:block;font-family:var(--mono);font-weight:500}
+.empty{color:var(--muted);font-size:13px;margin:0}
+footer{margin-top:24px;color:var(--muted);font-size:12px;max-width:100ch}
+footer p{margin:0 0 6px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+</style>
+
+<div class="wrap">
+<a class="mbar" id="mbar" href="#plan" aria-label="Plan summary, jump to plan"></a>
+<header>
+  <div>
+    <h1>Spring 2027 Bid Planner</h1>
+    <p>MSBA elective matrix for Spring 2027. Pick sections, see how they count toward the degree, catch time conflicts, and split your bid points. Section data as of the 10/27 matrix, which is subject to change.</p>
+  </div>
+  <div class="budget">
+    <label>Unit target<input id="tUnits" type="number" step="0.5" min="0" value="10.5"></label>
+    <label>Bid points<input id="tPts" type="number" step="10" min="0" value="700"></label>
+    <label>Bid group<select id="grp"><option value="1">MSBA 1st year (Week 2)</option><option value="2">MSBA 2nd year (Week 1)</option></select></label>
+  </div>
+</header>
+
+<main>
+  <section id="browse">
+    <div class="filters">
+      <input id="q" type="search" placeholder="Search course, title, instructor, section" aria-label="Search sections">
+      <select id="dept" aria-label="Department"><option value="">All departments</option><option>DSO</option><option>MKT</option><option>MOR</option><option>FBE</option></select>
+      <select id="sem" aria-label="Term length"><option value="">Full + half-semester</option><option value="F">Full semester (3.0)</option><option value="H1">1st half (1.5)</option><option value="H2">2nd half (1.5)</option></select>
+      <select id="fmt" aria-label="Format"><option value="">In person + online</option><option value="in">In person only</option><option value="on">Online only</option></select>
+      <select id="req" aria-label="Requirement type"><option value="">All requirement types</option><option value="core">Core only</option><option value="selective">Selective only</option><option value="elective">Elective only</option><option value="other">Not on MSBA lists</option></select>
+      <label class="chk"><input id="hideZero" type="checkbox" checked> Hide sections with no seats for my group</label>
+      <label class="chk"><input id="hideConf" type="checkbox"> Hide sections that clash with my plan</label>
+    </div>
+    <p class="count" id="count"></p>
+    <div id="list"></div>
+  </section>
+
+  <aside id="plan">
+    <div class="box" id="unitsBox"></div>
+    <div class="box" id="reqBox"></div>
+    <div class="box" id="prefBox"></div>
+    <div class="box" id="conflictBox"></div>
+    <div class="box" id="bidBox"></div>
+    <div class="box">
+      <h2>Weekly view</h2>
+      <div class="tabs" id="halfTabs"><button data-h="H1" class="act">1st half</button><button data-h="H2">2nd half</button></div>
+      <div class="cal" id="cal"></div>
+      <div class="lg"><span><i style="background:var(--accent);border-color:var(--accent)"></i>Core</span><span><i style="background:var(--el-bg);border-color:var(--el-bd)"></i>Selective and elective</span><span><i style="background:var(--bad-soft);border-color:var(--bad)"></i>Overlap</span></div>
+      <p class="empty" style="margin-top:6px;font-size:12px">Full-semester classes show in both halves. Dashed outline = online.</p>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <p><b>Where the data comes from.</b> Sections, times, rooms and seat counts were typed in from the printed Spring 2027 Graduate Elective Matrix (last updated 10/27, subject to change). Titles cut off on the printout may be shortened. Check every section number on USC Web Registration before you bid.</p>
+  <p><b>Degree requirements.</b> Based on the STARS degree-progress rules for MS Business Analytics (program 1559, catalog year 2026-27, students who started Fall 2026): 33 units minimum; core DSO 530 and DSO 545 plus the first-fall courses; at least one selective from DSO 531, 551, 556, 564, 573 or 574; at least three 500-level DSO electives; remaining units from FBE 543 and 551, MKT 512, 536, 543, 551, 566, 567 and 568, MOR 530, 531 and 569; and a practicum. Rules can differ by entry year, so confirm with your advisor.</p>
+  <p><b>Seat counts</b> are the seats open to your bid group. They do not show demand, since a section with many seats can still be the one everyone wants. The Spring 2026 tag shows how many seats were still open for that course in USC's class archive, across all sections and all students, not just MSBA. It shows leftover capacity, not what anyone bid, and sections, titles and instructors can change from year to year (DSO 528 had a different title in Spring 2026). Professor links open a name search on Google (limited to marshall.usc.edu) and on RateMyProfessors, which is third-party student opinion that has not been checked. Syllabus links open the Spring 2026 class archive for that course. Unofficial planner, not affiliated with USC.</p>
+</footer>
+</div>
+
+<script>
+//LOGIC-START
+// [dept, num, title, term(F|H1|H2), units, days, start, end, room, section, instructor, wk1(2nd yr), wk2(1st yr), msbaTotal, sectionTotal, note]
+const R=[
+['DSO','505','Sustainable Supply Chains','H1',1.5,'Th','18:30','21:20','JKP204','16202','Nixon, Bonnie',2,2,4,40,''],
+['DSO','522','Applied Time Series Analysis for Forecasting','F',3,'T','18:30','21:30','JKP102','16207','Selby, Richard',10,22,32,54,''],
+['DSO','528','AI-Powered Modeling for Business Decision-Making','F',3,'MW','15:30','16:50','JKP102','16212','Ansari, Arif',10,22,32,54,''],
+['DSO','528','AI-Powered Modeling for Business Decision-Making','F',3,'MW','17:00','18:20','JKP102','16211','Ansari, Arif',10,22,32,54,''],
+['DSO','530','Applied Modern Statistical Learning Methods','F',3,'T,Th','08:00','09:20','JKP110','16221','Dubey, Paromita',0,60,60,60,''],
+['DSO','530','Applied Modern Statistical Learning Methods','F',3,'MW','12:30','13:50','JKP212','16219','Maslova, Inga',0,60,60,60,''],
+['DSO','530','Applied Modern Statistical Learning Methods','F',3,'T,Th','12:30','13:50','JKP212','16222','Dubey, Paromita',0,60,60,60,''],
+['DSO','530','Applied Modern Statistical Learning Methods','F',3,'MW','14:00','15:20','JKP212','16220','Maslova, Inga',0,60,60,60,''],
+['DSO','530','Applied Modern Statistical Learning Methods','F',3,'T,Th','14:00','15:20','JKP212','16223','Dubey, Paromita',0,60,60,60,''],
+['DSO','531','Digital Foundations for Business Innovation','H2',1.5,'W','18:30','21:30','JKP210','16224','Lindholm, Inge, Cristie',15,17,32,54,''],
+['DSO','536','Business Decision Modeling and Risk Analysis','H2',1.5,'MW','11:00','12:20','HOH2','16226','Arnesano, Cosimo',15,17,32,54,''],
+['DSO','540','Fast and Flow Strategy: Mastering Real-Time Business in AI Age','F',3,'Th','18:30','21:30','ONLINE','16227','El Sawy, Omar, A',4,3,7,40,''],
+['DSO','545','Statistical Computing and Data Visualization','F',3,'T,Th','09:30','10:50','JKP110','16228','Chen, Feng',0,60,60,60,''],
+['DSO','545','Statistical Computing and Data Visualization','F',3,'T,Th','11:00','12:20','JKP110','16229','Chen, Feng',0,60,60,60,''],
+['DSO','545','Statistical Computing and Data Visualization','F',3,'T,Th','12:30','13:50','JKP110','16231','Chen, Feng',0,60,60,60,''],
+['DSO','545','Statistical Computing and Data Visualization','F',3,'MW','14:00','15:20','JKP112','16230','Pollok, Austin, Jeremy',0,60,60,60,''],
+['DSO','545','Statistical Computing and Data Visualization','F',3,'MW','15:30','16:50','JKP212','16232','Pollok, Austin, Jeremy',0,60,60,60,''],
+['DSO','547','Spreadsheet Modeling for Business Insights','F',3,'T,Th','14:00','15:20','JKP210','16237','Bayiz, Murat',15,17,32,54,''],
+['DSO','547','Spreadsheet Modeling for Business Insights','F',3,'T','18:30','21:30','ONLINE','16235','Subramanian, Bala',15,17,32,54,''],
+['DSO','550','Applying Analytics to Human Capital in Business','H1',1.5,'W','18:30','21:30','JKP210','16248','Higgins, Jeff',15,17,32,54,''],
+['DSO','553','NoSQL Databases in Big Data','H2',1.5,'Th','18:30','21:30','JKP204','16253','Banerjee, Joydeep',15,17,32,54,''],
+['DSO','554','Digital Strategies for Sustainability in Global Markets','F',3,'Sat','09:00','12:50','JKP102','16255','El Sawy, Omar, A',2,3,5,30,'Required travel to Copenhagen during Spring Break. Travel fee $2000, not including flights.'],
+['DSO','556','Business Models for Digital Platforms','F',3,'T,Th','12:30','13:50','JKP104','16265','Lindholm, Inge, Cristie',5,20,25,42,''],
+['DSO','556','Business Models for Digital Platforms','F',3,'T,Th','17:00','18:20','JKP102','16266','Lindholm, Inge, Cristie',5,20,25,42,''],
+['DSO','560','Text Analytics and Natural Language Processing','H2',1.5,'W','18:30','21:30','JKP102','16273','Lou, Bowen',25,25,50,50,'Prerequisite pre-cleared for all MSBA students.'],
+['DSO','565','Supply Chain Analytics','F',3,'T','18:30','21:30','ONLINE','16278','Xie, Kristine',3,2,5,54,''],
+['DSO','573','Data Analytics Driven Dynamic Strategy and Execution','F',3,'T,Th','14:00','15:20','JKP110','16282','Mohasseb, Saeed',10,22,32,54,''],
+['DSO','578','Fundamentals of Sports Performance Analytics','H1',1.5,'T,Th','11:00','12:20','JKP102','16290','Martin, Lorena',15,17,32,54,''],
+['DSO','580','Project Management','F',3,'T,Th','15:30','16:50','JKP212','16294','Bayiz, Murat',5,5,10,54,''],
+['DSO','583','Operations Consulting','F',3,'Sat','09:00','12:00','ONLINE','16302','Dasgupta, Tathagata',3,2,5,54,''],
+['DSO','586','Global Healthcare Operations Management','F',3,'MW','12:30','13:50','HOH2','16307','Chen, Feng; Arnesano, Cosimo',3,3,6,35,''],
+['DSO','588','Supply Chain Finance','F',3,'W','18:30','21:30','ONLINE','16308','Gopal, Christopher',3,2,5,54,''],
+['DSO','599','Special Topics: Human-first Engineering of Agentic Thinking','H1',1.5,'MW','11:00','12:20','HOH2','16332','Randhawa, Ramandeep, S.',17,15,32,54,''],
+['DSO','599','Special Topics: Human-first Engineering of Agentic Thinking','H1',1.5,'MW','14:00','15:20','HOH2','16333','Randhawa, Ramandeep, S.',17,15,32,54,''],
+['DSO','599','Special Topics: AI-Assisted Statistical Reasoning','F',3,'MW','11:00','12:20','JKP102','16331','Mukherjee, Gourab; Robinson, Keith',17,15,32,54,''],
+['DSO','599','Special Topics: The Business of AI Applications','F',3,'MW','12:30','13:50','JKP104','16329','Gomez Martinez, Jonathan, Erick',17,15,32,54,''],
+['DSO','599','Special Topics: Battles For Our Digital Ecosystems (Lessons from the Field)','H1',1.5,'M','18:30','21:30','JFF236','16334','Grusd, Jared, Earl',17,15,30,50,'The printed MSBA total (30) does not equal 17 + 15. Seat counts are shown as printed.'],
+['FBE','551','Quantitative Investing','F',3,'W','18:30','21:30','JKP104','15416','Pollok, Austin, Jeremy',5,5,10,54,'Prerequisite pre-cleared for all MSBA students.'],
+['MKT','512','Customer Insights and Analysis','F',3,'T,Th','14:00','15:20','JKP202','16516','Badame, Diane, Marie',1,1,2,57,''],
+['MKT','551','From Strategy to Execution: User Experience (UX) and Design','F',3,'T,Th','12:30','13:50','JKP112','16532','Schiele, Kristen',5,5,10,54,''],
+['MKT','556','Digital Marketing Strategy','F',3,'T,Th','15:30','16:50','JKP102','16538','Not listed',2,1,3,54,'Prerequisite pre-cleared for all MSBA students.'],
+['MKT','556','Digital Marketing Strategy','F',3,'T','18:30','21:30','JKP204','16536','Suh, Clinton',2,1,3,57,'Prerequisite pre-cleared for all MSBA students.'],
+['MKT','566','Decision Making Using Marketing Analytics','F',3,'T,Th','11:00','12:20','JKP204','16542','Dukes, Anthony',15,19,34,57,''],
+['MKT','566','Decision Making Using Marketing Analytics','F',3,'T,Th','14:00','15:20','JKP204','16544','Not listed',15,19,34,57,''],
+['MKT','566','Decision Making Using Marketing Analytics','F',3,'Th','18:30','21:30','JFF414','16545','Dukes, Anthony',17,19,36,60,''],
+['MKT','567','Marketing Metrics for Business Decisions','F',3,'MW','11:00','12:20','JKP104','16546','Mayzlin, Dina',4,3,7,54,''],
+['MKT','568','Geographic Information Systems Applications in Marketing','F',3,'W','18:30','21:30','ONLINE','16548','Burgos, Miriam, T.; Wellman, Beth',4,3,7,54,'Prerequisite pre-cleared for all MSBA students.'],
+['MOR','530','Strategic Leadership in Product Management','F',3,'T','18:30','21:30','JKP110','16727','Ho, Gordon, K; Tom, Sharon',6,5,11,60,''],
+['MOR','531','Applied Product Management','F',3,'W','18:30','21:30','JFF416','16719','Ho, Gordon, K',5,4,9,48,''],
+['MOR','531','Applied Product Management','F',3,'W','18:30','21:30','ONLINE','16754','Nero, Nicholas',5,4,9,48,''],
+['MOR','557','Strategy and Organization Consulting','F',3,'T,Th','14:00','15:20','JKP102','16695','Mische, Michael',5,5,10,54,''],
+['MOR','569','Negotiation and Deal-Making','F',3,'Sat','09:00','11:50','ONLINE','16732','Carnevale, Peter, J.',5,4,9,51,''],
+['MOR','569','Negotiation and Deal-Making','F',3,'Th','15:30','18:20','JKP110','16716','Carnevale, Peter, J.',5,5,10,55,''],
+['MOR','569','Negotiation and Deal-Making','F',3,'W','18:30','21:30','JKP212','16718','El Haddad, Christine',5,5,10,55,'']
+];
+const mins=t=>{const [h,m]=t.split(':');return +h*60+ +m};
+const S=R.map(r=>({code:r[0]+' '+r[1],dept:r[0],title:r[2],term:r[3],units:r[4],days:r[5].match(/Sat|Th|M|T|W|F/g),dayStr:r[5].replace(/,/g,' '),
+  s:mins(r[6]),e:mins(r[7]),st:r[6],et:r[7],room:r[8],id:r[9],instr:r[10],w1:r[11],w2:r[12],alloc:r[13],total:r[14],note:r[15],
+  key:r[0]+' '+r[1]+'|'+r[2],online:r[8]==='ONLINE'}));
+const BY=Object.fromEntries(S.map(x=>[x.id,x]));
+const CORE=['DSO 545','DSO 530'];
+const SEL=['DSO 531','DSO 551','DSO 556','DSO 564','DSO 573','DSO 574']; // need at least one
+const LIST6=['FBE 543','FBE 551','MKT 512','MKT 536','MKT 543','MKT 551','MKT 566','MKT 567','MKT 568','MOR 530','MOR 531','MOR 569']; // approved non-DSO electives
+const kind=c=>CORE.includes(c)?'core':SEL.includes(c)?'selective':(c.startsWith('DSO ')||LIST6.includes(c))?'elective':'other';
+const kindPill=c=>({core:'<span class="pill core">Core</span>',selective:'<span class="pill core">Selective</span>',elective:'<span class="pill">Elective</span>',other:'<span class="pill warn">Not on MSBA lists</span>'})[kind(c)];
+const unitsOf=(l,k)=>l.filter(x=>kind(x.code)===k).reduce((a,x)=>a+x.units,0);
+const dsoElectives=l=>new Set(l.filter(x=>kind(x.code)==='elective'&&x.dept==='DSO').map(x=>x.key)).size;
+// Seats still open per course in the Spring 2026 class archive (all sections, all students). null = not offered, 'full' = all sections full.
+const LAST={'DSO 505':16,'DSO 522':null,'DSO 528':25,'DSO 530':10,'DSO 531':6,'DSO 536':1,'DSO 540':null,'DSO 545':5,'DSO 547':14,'DSO 550':7,'DSO 553':4,'DSO 554':1,'DSO 556':24,'DSO 560':3,'DSO 565':32,'DSO 573':null,'DSO 578':13,'DSO 580':2,'DSO 583':12,'DSO 586':10,'DSO 588':11,'DSO 599':64,'FBE 551':'full','MKT 512':'full','MKT 551':null,'MKT 556':3,'MKT 566':22,'MKT 567':2,'MKT 568':null,'MOR 530':3,'MOR 531':'full','MOR 557':8,'MOR 569':10};
+const LASTSEC={'DSO 530':[['Dubey','Paromita Dubey (co-taught with Mladen Kolar)',10,20,4]],'DSO 545':[['Pollok','Austin Pollok',3,55,2],['Chen','Feng Chen',1,0,2]],'DSO 547':[['Bayiz','Murat Bayiz',0,40],['Subramanian','Bala Subramanian',14,0]],'DSO 599':[['Gomez Martinez','Jonathan Gomez Martinez',25,0],['Grusd','Jared Grusd',3,1]]}; // [surname, name, seats left, waitlist, number of sections if more than one] from the Spring 2026 archive
+const secPill=x=>{const L=LASTSEC[x.code];if(!L)return '';const m=L.find(r=>x.instr.includes(r[0]));if(!m)return '<span class="pill">No Spring 2026 section with this professor</span>';const w=(m[4]?` across ${m[4]} sections`:'')+(m[3]?`, ${m[3]} on waitlist`:'');return m[2]===0?`<span class="pill bad">Spring 2026 with ${m[1]}: full${w}</span>`:`<span class="pill ${m[2]<=5?'warn':'good'}">Spring 2026 with ${m[1]}: ${m[2]} seat${m[2]===1?'':'s'} left${w}</span>`};
+const avoided=(x,p)=>{p=p||{};return !!((p.earliest&&x.s<mins(p.earliest))||(p.latest&&x.e>mins(p.latest))||x.days.some(d=>(p.days||{})[d])||(p.blocks||[]).some(b=>b.s&&b.e&&x.days.includes(b.d)&&x.s<mins(b.e)&&mins(b.s)<x.e))};
+const PL={must:'Must have',want:'Want',backup:'Backup'};
+const profLinks=x=>{if(x.instr==='Not listed')return '';return '<div class="plinks">'+x.instr.split(';').map(p=>{const a=p.split(',').map(t=>t.trim()),n=((a[1]||'')+' '+a[0]).trim();return `<span>${n}: <a href="https://www.google.com/search?q=${encodeURIComponent('site:marshall.usc.edu "'+n+'"')}" target="_blank" rel="noopener noreferrer">Marshall profile search</a> · <a href="https://www.ratemyprofessors.com/search/professors?q=${encodeURIComponent(n)}" target="_blank" rel="noopener noreferrer">RateMyProfessors</a></span>`}).join('')+'</div>'};
+const sylLink=c=>LAST[c]===null?'':`<a class="syl" href="https://classes.usc.edu/archive/term/20261/catalogue/search?searchphrase=${encodeURIComponent(c)}" target="_blank" rel="noopener noreferrer">Past syllabus (Spring 2026)</a>`;
+const lastPill=c=>{const v=LAST[c];if(v===undefined||LASTSEC[c])return '';if(v===null)return '<span class="pill">Not offered Spring 2026</span>';if(v==='full')return '<span class="pill bad">Spring 2026: all sections full</span>';return `<span class="pill ${v<=5?'warn':'good'}">Spring 2026: ${v} seat${v===1?'':'s'} left${c==='DSO 599'?' (all topics)':''}</span>`};
+const halvesMeet=(a,b)=>a.term==='F'||b.term==='F'||a.term===b.term;
+const clash=(a,b)=>a.id!==b.id&&halvesMeet(a,b)&&a.days.some(d=>b.days.includes(d))&&a.s<b.e&&b.s<a.e;
+const bld=x=>x.room.replace(/\d+$/,'');
+function tight(a,b){ // back-to-back in different buildings, 15 min or less
+  if(a.id===b.id||!halvesMeet(a,b)||a.online||b.online||bld(a)===bld(b))return false;
+  return a.days.some(d=>b.days.includes(d))&&((b.s-a.e>=0&&b.s-a.e<=15)||(a.s-b.e>=0&&a.s-b.e<=15));}
+function conflicts(list){const out=[];for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
+  if(clash(list[i],list[j]))out.push({a:list[i],b:list[j],type:'overlap'});else if(tight(list[i],list[j]))out.push({a:list[i],b:list[j],type:'tight'});}return out;}
+const seatsFor=(x,g)=>g==='1'?x.w2:x.w1;
+
+function autoBid(list,g,total,mode){
+  if(!list.length)return {};
+  const w=list.map(x=>x.units*(mode==='prio'?({must:3,want:2,backup:1})[(st.prio||{})[x.id]||'want']:1));const sum=w.reduce((a,b)=>a+b,0);
+  const v=w.map(x=>Math.round(total*x/sum/5)*5);const diff=total-v.reduce((a,b)=>a+b,0);
+  v[v.indexOf(Math.max(...v))]+=diff;const o={};list.forEach((x,i)=>o[x.id]=v[i]);return o;}
+//LOGIC-END
+
+let copyMsg='',copyFallback='';
+let st={sel:[],bids:{},done:{},half:'H1',example:false};
+try{const s=JSON.parse(localStorage.getItem('sp27')||'null');if(s&&Array.isArray(s.sel)){st=s}}catch(e){}
+const $=id=>document.getElementById(id);
+const save=()=>{try{localStorage.setItem('sp27',JSON.stringify(st))}catch(e){}};
+const num=id=>+$(id).value||0;
+const selList=()=>st.sel.map(i=>BY[i]).filter(Boolean);
+const fmtT=t=>{let [h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+String(m).padStart(2,'0')+' '+ap};
+const eur=n=>Number.isInteger(n)?n:n.toFixed(1);
+
+function toggle(id){copyMsg='';copyFallback='';const k=st.sel.indexOf(id);if(k>=0){st.sel.splice(k,1);delete st.bids[id];if(st.prio)delete st.prio[id]}else st.sel.push(id);st.example=false;save();render()}
+
+function renderList(){
+  const q=$('q').value.toLowerCase().trim(),g=$('grp').value,sel=selList();
+  const rows=S.filter(x=>{
+    if($('dept').value&&x.dept!==$('dept').value)return false;
+    if($('sem').value&&x.term!==$('sem').value)return false;
+    if($('fmt').value==='in'&&x.online)return false;
+    if($('fmt').value==='on'&&!x.online)return false;
+    if($('req').value&&kind(x.code)!==$('req').value)return false;
+    if($('hideZero').checked&&seatsFor(x,g)===0&&!st.sel.includes(x.id))return false;
+    if($('hideConf').checked&&!st.sel.includes(x.id)&&sel.some(y=>clash(x,y)))return false;
+    if(q&&!(x.code+' '+x.title+' '+x.instr+' '+x.id).toLowerCase().includes(q))return false;
+    return true;});
+  $('count').textContent=rows.length+' of '+S.length+' sections shown';
+  const groups=new Map();rows.forEach(x=>{if(!groups.has(x.key))groups.set(x.key,[]);groups.get(x.key).push(x)});
+  const P=st.pref;const ordered=[...groups.values()].map(s=>s.slice().sort((a,b)=>avoided(a,P)-avoided(b,P))).sort((a,b)=>a.every(x=>avoided(x,P))-b.every(x=>avoided(x,P)));
+  let h='';
+  ordered.forEach(secs=>{const c=secs[0],isCore=CORE.includes(c.code),none=secs.every(x=>avoided(x,P));
+    h+=`<article class="course"><div class="ch"><span class="code">${c.code}</span><span class="ttl">${c.title}</span>
+      ${kindPill(c.code)}${lastPill(c.code)}${sylLink(c.code)}
+      <span class="pill">${eur(c.units)} units · ${c.term==='F'?'Full semester':c.term==='H1'?'1st half':'2nd half'}</span></div>`;
+    const notes=[...new Set(secs.map(s=>s.note).filter(Boolean))];notes.forEach(n=>h+=`<div class="note">${n}</div>`);if(none)h+=`<div class="note">None of this course's sections fit your preferred times.</div>`;
+    secs.forEach(x=>{const on=st.sel.includes(x.id),n=seatsFor(x,g),av=avoided(x,st.pref);
+      const cf=sel.filter(y=>clash(x,y));const dup=!on&&sel.some(y=>y.key===x.key);
+      h+=`<div class="sec${on?' on':''}${av?' dim':''}"><div><div class="when">${x.dayStr} · ${fmtT(x.st)} to ${fmtT(x.et)}</div>
+        <div class="meta"><span>§ ${x.id}</span><span>${x.room}</span><span>${x.instr}</span></div>${profLinks(x)}
+        <div class="seats"><span>Seats for your group: <b>${n}</b> of ${x.total}</span>${n===0?'<span class="pill bad">No seats for your group</span>':''}${secPill(x)}${on?`<span class="pill">${PL[(st.prio||{})[x.id]||'want']}</span>`:''}${av?'<span class="pill warn">Outside your preferred times</span>':''}
+        ${!on&&cf.length?`<span class="pill bad">Clashes with ${cf.map(y=>y.code).join(', ')}</span>`:''}
+        ${dup?'<span class="pill warn">Same course already in plan</span>':''}</div></div>
+        <button class="add${on?' on':''}" data-id="${x.id}" aria-pressed="${on}">${on?'In plan':'Add'}</button></div>`;});
+    h+='</article>';});
+  $('list').innerHTML=h||'<p class="empty">No sections match. Loosen a filter.</p>';
+}
+
+function renderPlan(){
+  const sel=selList(),g=$('grp').value,tU=num('tUnits'),tP=num('tPts');
+  const units=sel.reduce((a,x)=>a+x.units,0),pct=tU?Math.min(100,units/tU*100):0;
+  const diff=units-tU;
+  $('unitsBox').innerHTML=`<h2>Your plan</h2><div class="kv"><span>Units</span><b>${eur(units)} of ${eur(tU)}</b></div>
+    <div class="bar${units>tU?' over':''}"><i style="width:${pct}%"></i></div>
+    <div class="kv"><span>${diff===0?'On target':diff<0?eur(-diff)+' units to go':eur(diff)+' units over target'}</span><span>${sel.length} section${sel.length===1?'':'s'}</span></div>
+    ${st.example?'<p class="empty" style="margin-top:8px;font-size:12px">Example plan: the four classes circled on the printout. Change it any time.</p>':''}
+    <div class="tools"><button class="sm" id="copyPlan">Copy my plan</button><button class="sm" id="clear">Clear plan</button></div>
+    ${copyMsg?`<p class="empty" style="margin:8px 0 0;font-size:12px">${copyMsg}</p>`:''}${copyFallback?`<textarea id="copyBox" readonly rows="9" style="width:100%;margin-top:6px;font:12px var(--mono);background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px">${copyFallback.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>`:''}`;
+  // requirements
+  const has=c=>sel.some(x=>x.code===c);
+  const coreRows=CORE.map(c=>{const ok=has(c);
+    return `<li><span class="mark ${ok?'ok':'no'}">${ok?'✓':'!'}</span><span><b class="code">${c}</b> ${c==='DSO 545'?'Statistical Computing and Data Visualization':'Applied Modern Statistical Learning Methods'}, 3 units.
+      ${ok?'In your plan.':'Not in your plan.'}
+      </span></li>`}).join('');
+  const coreU=sel.filter(x=>CORE.includes(x.code)).reduce((a,x)=>a+x.units,0),elecU=units-coreU;
+  const dups=Object.entries(sel.reduce((m,x)=>(m[x.key]=(m[x.key]||[]).concat(x),m),{})).filter(([k,v])=>v.length>1);
+  const bigGap=sel.length&&units%1.5!==0?'':'';
+  $('reqBox').innerHTML=`<h2>MSBA requirements</h2><ul class="clean">${coreRows}
+    <li><span class="mark ${dsoElectives(sel)>=3?'ok':'info'}">${dsoElectives(sel)>=3?'✓':'i'}</span><span>At least three 500-level DSO electives are required prior to graduation. Your plan has <b>${dsoElectives(sel)}</b> (core and selective courses are counted separately).</span></li>
+    <li><span class="mark ok">=</span><span>This plan adds <b>${eur(units)}</b> units toward the 33-unit minimum: ${eur(unitsOf(sel,'core'))} core, ${eur(unitsOf(sel,'selective'))} selective, ${eur(unitsOf(sel,'elective'))} elective${unitsOf(sel,'other')?`, ${eur(unitsOf(sel,'other'))} not on the MSBA lists`:''}. The program also requires a practicum.</span></li>
+    ${[...new Set(sel.filter(x=>kind(x.code)==='other').map(x=>x.code))].map(c=>`<li><span class="mark x">!</span><span><b class="code">${c}</b> is not on the MSBA core, selective or elective lists. Ask your advisor whether it counts.</span></li>`).join('')}
+    ${dups.map(([k,v])=>`<li><span class="mark x">!</span><span>${v[0].code} appears ${v.length} times (sections ${v.map(x=>x.id).join(', ')}). Keep one.</span></li>`).join('')}
+    ${SEL.length?`<li><span class="mark ${sel.some(x=>kind(x.code)==='selective')?'ok':'info'}">${sel.some(x=>kind(x.code)==='selective')?'✓':'i'}</span><span>Selective must be completed prior to graduation next year. ${sel.some(x=>kind(x.code)==='selective')?'Your plan has one.':'Your plan has none.'}</span></li>`:'<li><span class="mark no">?</span><span>At least one elective must come from the business-technology-data selective list. That list is not on the matrix, so check it with your advisor.</span></li>'}
+    ${sel.some(x=>x.id==='16255')?'<li><span class="mark no">!</span><span>DSO 554 includes a Copenhagen trip over Spring Break with a $2000 fee.</span></li>':''}
+    </ul>`;
+  // conflicts
+  const cf=conflicts(sel),ov=cf.filter(c=>c.type==='overlap'),tg=cf.filter(c=>c.type==='tight');
+  const lab=c=>`<b class="code">${c.code}</b> §${c.id}`;
+  $('conflictBox').innerHTML=`<h2>Time conflicts</h2>`+(!sel.length?'<p class="empty">Add sections to check them.</p>':
+    (!cf.length?'<p style="margin:0"><span class="pill good">No overlaps</span> <span class="empty">Half-semester classes in different halves do not overlap.</span></p>':
+    `<ul class="clean">${ov.map(c=>`<li><span class="mark x">✕</span><span>${lab(c.a)} overlaps ${lab(c.b)} (${c.a.dayStr} ${fmtT(c.a.st)} to ${fmtT(c.a.et)} vs ${c.b.dayStr} ${fmtT(c.b.st)} to ${fmtT(c.b.et)}).</span></li>`).join('')}
+    ${tg.map(c=>`<li><span class="mark no">!</span><span>${lab(c.a)} and ${lab(c.b)} are back to back in different buildings (${c.a.room} to ${c.b.room}), 15 minutes or less.</span></li>`).join('')}</ul>`));
+  // bids
+  const bidSum=sel.reduce((a,x)=>a+(+st.bids[x.id]||0),0),left=tP-bidSum;
+  $('bidBox').innerHTML=`<h2>Bid points</h2>`+(!sel.length?'<p class="empty">Add sections to split your points.</p>':
+    `<div class="kv"><span>Allocated</span><b>${bidSum} of ${tP}</b></div>
+    <div class="bar${left<0?' over':''}"><i style="width:${tP?Math.min(100,bidSum/tP*100):0}%"></i></div>
+    <div class="kv" style="margin-bottom:6px"><span>${left<0?'Over by':'Left'}</span><b style="color:${left<0?'var(--bad)':'inherit'}">${Math.abs(left)}</b></div>
+    ${sel.map(x=>{const n=seatsFor(x,g);return `<div class="bidrow"><div><b class="code">${x.code}</b> §${x.id}<div class="meta"><span>${n} seats for your group</span></div><select class="prio" data-prio="${x.id}" aria-label="Priority for ${x.code}">${Object.entries(PL).map(([k,l])=>`<option value="${k}"${((st.prio||{})[x.id]||'want')===k?' selected':''}>${l}</option>`).join('')}</select></div>
+      <input type="number" min="0" step="5" data-bid="${x.id}" value="${st.bids[x.id]??''}" placeholder="0" aria-label="Points for ${x.code}"><button class="sm" data-rm="${x.id}" aria-label="Remove ${x.code}">✕</button></div>`}).join('')}
+    <div class="tools"><button class="sm" id="even">Split by units</button><button class="sm" id="prioSplit">Split by priority</button></div>
+    <p class="empty" style="margin-top:8px;font-size:12px">Suggestions are a starting point. The priority split weights Must have 3, Want 2 and Backup 1, times units. Seat counts cannot show what others will bid.</p>`);
+  const P=st.pref=st.pref||{earliest:'',latest:'',days:{},blocks:[]},hit=sel.filter(x=>avoided(x,P));
+  const dn=[['M','Mon'],['T','Tue'],['W','Wed'],['Th','Thu'],['F','Fri'],['Sat','Sat']],any=P.earliest||P.latest||Object.values(P.days).some(Boolean)||P.blocks.length;
+  $('prefBox').innerHTML=`<h2>Preferred times</h2>
+    <div class="prow"><label>No class starts before<input type="time" id="pEarly" value="${P.earliest||''}"></label><label>No class ends after<input type="time" id="pLate" value="${P.latest||''}"></label></div>
+    <div class="pdays"><span>Avoid days:</span>${dn.map(([k,l])=>`<label><input type="checkbox" data-day="${k}" ${P.days[k]?'checked':''}> ${l}</label>`).join('')}</div>
+    <div class="pblocks">${P.blocks.map((b,i)=>`<div class="pb"><select data-bd="${i}" aria-label="Blocked day">${dn.map(([k,l])=>`<option value="${k}"${b.d===k?' selected':''}>${l}</option>`).join('')}</select><input type="time" data-bs="${i}" value="${b.s||''}" aria-label="Blocked from"><span>to</span><input type="time" data-be="${i}" value="${b.e||''}" aria-label="Blocked until"><button class="sm" data-pbrm="${i}" aria-label="Remove blocked time">\u2715</button></div>`).join('')}<button class="sm" id="pbadd">+ Block a time (work, lunch, a standing commitment)</button></div>
+    ${any?'<div class="tools"><button class="sm" id="pclear">Clear preferences</button></div>':''}
+    <p class="empty" style="margin:8px 0 0;font-size:12px">Sections outside these times are dimmed and listed after the ones that fit.</p>
+    ${hit.map(x=>`<p style="margin:8px 0 0;font-size:13px"><span class="pill warn">Heads up</span> <b class="code">${x.code}</b> \u00a7${x.id} is at a time you want to avoid.</p>`).join('')}<p class="empty" style="margin:10px 0 0;font-size:12px">Tip: popular sections can fill up. Put at least a few points on another section of the same course, even one at a time you would rather avoid, so you have a chance to get on its waitlist.</p>`;
+  mbarUpdate();
+  renderCal(sel,cf);
+}
+
+function renderCal(sel,cf){
+  const H0=8,H1=22,PX=34,h=(H1-H0)*PX;const days=['M','T','W','Th','F','Sat'],names=['Mon','Tue','Wed','Thu','Fri','Sat'];
+  const half=st.half,act=sel.filter(x=>x.term==='F'||x.term===half);
+  const bad=new Set(cf.filter(c=>c.type==='overlap').flatMap(c=>[c.a.id,c.b.id]));
+  let hrs='';for(let t=H0;t<=H1;t+=2)hrs+=`<span style="top:${(t-H0)*PX}px">${t>12?t-12:t}${t>=12?'p':'a'}</span>`;
+  let cols='';days.forEach(d=>{const items=act.filter(x=>x.days.includes(d)).sort((a,b)=>a.s-b.s);let b='';
+    items.forEach(x=>{const grp=items.filter(y=>y.s<x.e&&x.s<y.e),i=grp.indexOf(x),n=grp.length;
+      b+=`<div class="blk${x.online?' online':''}${kind(x.code)==='core'?' core':' el'}${bad.has(x.id)?' conf':''}" style="top:${(x.s-H0*60)/60*PX}px;height:${(x.e-x.s)/60*PX-1}px;left:${i/n*100}%;width:${100/n}%" title="${x.code} ${x.title}"><b>${x.code}</b>${x.id}</div>`});
+    cols+=`<div class="col" style="--h:${h}px;--hr:${PX}px">${b}</div>`});
+  $('cal').innerHTML=`<div class="grid"><div></div>${names.map(n=>`<div class="dh">${n}</div>`).join('')}<div class="hrs" style="--h:${h}px">${hrs}</div>${cols}</div>`;
+  document.querySelectorAll('#halfTabs button').forEach(b=>b.classList.toggle('act',b.dataset.h===half));
+}
+function mbarUpdate(){const sel=selList(),tU=num('tUnits'),tP=num('tPts'),u=sel.reduce((a,x)=>a+x.units,0),b=sel.reduce((a,x)=>a+(+st.bids[x.id]||0),0),c=conflicts(sel).filter(k=>k.type==='overlap').length;
+  $('mbar').innerHTML=`<span class="${u>tU?'bad':''}">${eur(u)} of ${eur(tU)} units</span><span class="${b>tP?'bad':''}">${b} of ${tP} pts</span><span class="${c?'bad':''}">${c} clash${c===1?'':'es'}</span>`}
+function planText(){
+  const sel=selList(),g=$('grp').value,tU=num('tUnits'),tP=num('tPts'),P=st.pref||{};
+  const units=sel.reduce((a,x)=>a+x.units,0),pts=sel.reduce((a,x)=>a+(+st.bids[x.id]||0),0);
+  const L=['Spring 2027 plan ('+(g==='1'?'MSBA 1st year, Week 2':'MSBA 2nd year, Week 1')+')',''];
+  sel.forEach(x=>L.push(`${x.code} ${x.title} | section ${x.id} | ${x.dayStr} ${fmtT(x.st)} to ${fmtT(x.et)}${x.term==='F'?'':x.term==='H1'?' (1st half)':' (2nd half)'} | ${eur(x.units)} units | ${PL[(st.prio||{})[x.id]||'want']} | ${+st.bids[x.id]||0} points`));
+  if(!sel.length)L.push('(no sections selected)');
+  L.push('',`Total: ${eur(units)} of ${eur(tU)} units, ${pts} of ${tP} points`,'');
+  const W=[];
+  conflicts(sel).forEach(c=>W.push(c.type==='overlap'?`${c.a.code} (${c.a.id}) overlaps ${c.b.code} (${c.b.id})`:`${c.a.code} (${c.a.id}) and ${c.b.code} (${c.b.id}) are back to back in different buildings`));
+  sel.filter(x=>avoided(x,P)).forEach(x=>W.push(`${x.code} (${x.id}) is at a time I wanted to avoid`));
+  CORE.forEach(c=>{if(!sel.some(x=>x.code===c))W.push(`${c} (core) is not in the plan`)});
+  const seen={};sel.forEach(x=>{(seen[x.key]=seen[x.key]||[]).push(x.id)});Object.values(seen).filter(v=>v.length>1).forEach(v=>W.push('Same course twice: sections '+v.join(', ')));
+  [...new Set(sel.filter(x=>kind(x.code)==='other').map(x=>x.code))].forEach(c=>W.push(`${c} is not on the MSBA core, selective or elective lists`));
+  if(units!==tU)W.push(`Units ${eur(units)} vs target ${eur(tU)}`);
+  if(pts>tP)W.push(`Points over budget by ${pts-tP}`);else if(pts<tP&&sel.length)W.push(`${tP-pts} points not yet allocated`);
+  L.push(W.length?'Open items:':'No open items.');W.forEach(w=>L.push('- '+w));
+  L.push('','Planned with the Spring 2027 Bid Planner (unofficial). Confirm sections on Web Registration.');
+  return L.join('\n');
+}
+function render(){renderList();renderPlan()}
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('button');if(!t)return;
+  if(t.dataset.id)return toggle(t.dataset.id);
+  if(t.dataset.rm)return toggle(t.dataset.rm);
+  if(t.dataset.h){st.half=t.dataset.h;save();return renderPlan()}
+  if(t.id==='clear'){st={sel:[],bids:{},done:st.done,half:st.half,pref:st.pref,example:false};save();return render()}
+  if(t.id==='pbadd'){const P=st.pref=st.pref||{earliest:'',latest:'',days:{},blocks:[]};P.blocks.push({d:'T',s:'12:00',e:'13:00'});save();return render()}
+  if(t.dataset.pbrm!==undefined){st.pref.blocks.splice(+t.dataset.pbrm,1);save();return render()}
+  if(t.id==='pclear'){st.pref={earliest:'',latest:'',days:{},blocks:[]};save();return render()}
+  if(t.id==='copyPlan'){const txt=planText();copyFallback='';let pr;try{pr=navigator.clipboard.writeText(txt)}catch(e){pr=Promise.reject(e)}
+    pr.then(()=>{copyMsg='Copied. Paste it into an email or notes.';renderPlan()},()=>{copyMsg='Copying was blocked here. Select the text below and copy it.';copyFallback=txt;renderPlan();const b=$('copyBox');if(b)b.select()});return}
+  if(t.id==='prioSplit'){st.bids=autoBid(selList(),$('grp').value,num('tPts'),'prio');save();return renderPlan()}
+  if(t.id==='even'){st.bids=autoBid(selList(),$('grp').value,num('tPts'),'even');save();return renderPlan()}
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.prio){st.prio=st.prio||{};st.prio[t.dataset.prio]=t.value;save();return render()}
+  const P=st.pref=st.pref||{earliest:'',latest:'',days:{},blocks:[]};
+  if(t.id==='pEarly')P.earliest=t.value;
+  else if(t.id==='pLate')P.latest=t.value;
+  else if(t.dataset.day)P.days[t.dataset.day]=t.checked;
+  else if(t.dataset.bd!==undefined)P.blocks[+t.dataset.bd].d=t.value;
+  else if(t.dataset.bs!==undefined)P.blocks[+t.dataset.bs].s=t.value;
+  else if(t.dataset.be!==undefined)P.blocks[+t.dataset.be].e=t.value;
+  else return;
+  save();render();
+});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.bid){st.bids[t.dataset.bid]=+t.value||0;save();
+    // update only the totals, keep focus in the input
+    const bidSum=selList().reduce((a,x)=>a+(+st.bids[x.id]||0),0),tP=num('tPts');
+    const kv=document.querySelectorAll('#bidBox .kv');if(kv[0]){kv[0].lastChild.textContent=bidSum+' of '+tP;kv[1].firstChild.textContent=tP-bidSum<0?'Over by':'Left';kv[1].lastChild.textContent=Math.abs(tP-bidSum);kv[1].lastChild.style.color=tP-bidSum<0?'var(--bad)':'inherit'}
+    const bar=document.querySelector('#bidBox .bar');bar.classList.toggle('over',tP-bidSum<0);bar.firstChild.style.width=(tP?Math.min(100,bidSum/tP*100):0)+'%';mbarUpdate();return}
+  if(['q','dept','sem','fmt','req','hideZero','hideConf','grp'].includes(t.id))renderList()&&0;
+  if(t.id==='grp'||t.id==='tUnits'||t.id==='tPts')renderPlan();
+});
+render();
+</script>
+</body></html>
